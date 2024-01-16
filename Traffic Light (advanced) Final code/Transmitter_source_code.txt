@@ -1,0 +1,96 @@
+// Embedded Software Engineering
+// Smart City
+//Traffic Lights
+// ESE
+// Group 8
+
+ 
+
+String ssid     = "Simulator Wifi";  // SSID to connect to
+String password = ""; // Our virtual wifi has no password 
+String host     = "api.thingspeak.com"; // Open Weather Map API
+const int httpPort   = 80;
+String uri     = "/update?api_key=469H2SE90BXTTCPP&field1=";
+ int temp;
+
+int setupESP8266(void) {
+  // Start our ESP8266 Serial Communication
+  Serial.begin(115200);   // Serial connection over USB to computer
+  Serial.println("AT");   // Serial connection on Tx / Rx port to ESP8266
+  delay(10);        // Wait a little for the ESP to respond
+  if (!Serial.find("OK")) return 1;
+    
+  // Connect to 123D Circuits Simulator Wifi
+  Serial.println("AT+CWJAP=\"" + ssid + "\",\"" + password + "\"");
+  delay(10);        // Wait a little for the ESP to respond
+  if (!Serial.find("OK")) return 2;
+  
+  // Open TCP connection to the host:
+  Serial.println("AT+CIPSTART=\"TCP\",\"" + host + "\"," + httpPort);
+  delay(50);        // Wait a little for the ESP to respond
+  if (!Serial.find("OK")) return 3;
+  
+  return 0;
+}
+
+void anydata(void) {
+  temp = map(analogRead(A0), 20, 358, -10, 80); // Reads temperature values from the sensor
+  int sensor_read = analogRead(A1);             // Reads and stores the reading from the detector in sensor_read
+  
+  // Construct our HTTP call
+  String httpPacket = "GET " + uri + "&field1=" + String(temp) + "&field2=" + String(sensor_read) + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n";
+  int length = httpPacket.length();
+  
+  // Send our message length
+  Serial.print("AT+CIPSEND=");
+  Serial.println(length);
+  delay(10); // Wait a little for the ESP to respond if (!Serial.find(">")) return -1;
+    
+
+  // Send our http request
+  Serial.print(httpPacket);
+  delay(10); // Wait a little for the ESP to respond
+  if (!Serial.find("SEND OK\r\n")) return;
+}
+
+void setup() {
+  pinMode(A0, INPUT);
+  pinMode(10, OUTPUT);
+  pinMode(9, OUTPUT);
+  pinMode(8, OUTPUT);
+  pinMode(A1, INPUT);
+  pinMode(7, OUTPUT);
+  pinMode(6, OUTPUT);
+
+  Serial.begin(9600); 
+  setupESP8266();             
+}
+
+ void loop() {
+  // Read and compare temperature values
+  anydata();
+  int temp = map(analogRead(A0),20,358,-10,80); 
+  int sensor_read = analogRead(A1);
+  Serial.print("Temperature = ");
+  Serial.println(temp);
+  delay(1000);
+  
+  if (temp <= 25) {
+    digitalWrite(10, HIGH);
+    digitalWrite(9, LOW);
+    digitalWrite(8, LOW);
+    
+  } else if (temp > 25 && temp <= 55) {
+    digitalWrite(8, LOW);
+    digitalWrite(9, HIGH);
+    digitalWrite(10, LOW);
+    
+  } else if (temp > 55) {
+    digitalWrite(10, LOW);
+    digitalWrite(9, LOW);
+    digitalWrite(8, HIGH);
+  }
+
+  // Delay a little bit to improve simulation performance
+  delay(1000);
+}
