@@ -1,0 +1,453 @@
+// Embedded Software Engineering
+// Smart City
+//Traffic Lights
+// ESE
+// Group 8
+ 
+
+const char*   ssid     = "Simulator Wifi";
+const char*    password = ""; //simulator wifi have no password
+unsigned long myChannelNumber = 1616400;
+String myChannelNumber1 = "1616400";        //for simulation only
+const char * myReadAPIKey = "EEP8GH0Y5GM42BIN";
+int temperature;
+
+// Traffic Light 1 (East-West)
+const int eastWestGreen = 2;
+const int eastWestYellow = 3;
+const int eastWestRed = 4;
+int eastWestTrafficDensityPin = A0;
+int eastWestPedestrianButton = 5;
+
+// Traffic Light 2 (North-South)
+const int northSouthGreen = 6;
+const int northSouthYellow = 7;
+const int northSouthRed = 8;
+int northSouthTrafficDensityPin = A1;
+int northSouthPedestrianButton = 9;
+
+// Pedestrian Crossing
+const int pedestrianGreen = 10;
+const int pedestrianRed = 11;
+int pedestrianButtonPin = 12; // Adjust the pin accordingly
+
+// Define constants for pedestrian crossing timings
+const unsigned long RED_DURATION = 1000;
+const unsigned long GREEN_DURATION = 5000;
+
+// Variables to track the pedestrian crossing state and timing
+bool pedestrianCrossing = false;
+unsigned long pedestrianCrossingStartTime = 0;
+ 
+
+// Add this global variable
+bool emergencySignalReceived = false;
+
+
+//______________________________________________________________________________________
+class WiFiclass {
+  public:
+    #define WL_CONNECTED 1
+    int begin(String ssid, String password);
+    int status();
+    int localIP();
+} WiFi;
+
+class WiFiClient {
+  public:
+    int connect(String host, int httpPort);
+    int  write(String httpPacket, int length);
+    String read(String httpPacket, int length);
+    int pos;
+};
+
+class ThingSpeakclass {
+  private:
+    boolean bollean[9];
+    String field[9];
+    String host     = "api.thingspeak.com"; // Open Weather Map API
+    int httpPort   = 80;
+    String readURI  = "/channels/";
+    String writeURI = "/update?api_key=";
+  public:
+    int begin(WiFiClient Wificlient);
+    int setField(int pos, float temp);
+    int writeFields(unsigned long myChannelNumber, const char* myWriteAPIKey);
+    String readFloatField(unsigned long myChannelNumber, int pos, const char* myReadAPIKey);
+} ThingSpeak;
+//______________________________________________________________________________________
+
+
+WiFiClient Wificlient;
+
+void setup() {
+  
+  pinMode(A0, INPUT);
+  pinMode(A1, INPUT);
+  
+  pinMode(eastWestGreen, OUTPUT);
+  pinMode(eastWestYellow, OUTPUT);
+  pinMode(eastWestRed, OUTPUT);
+  pinMode(eastWestPedestrianButton, INPUT_PULLUP);
+
+  pinMode(northSouthGreen, OUTPUT);
+  pinMode(northSouthYellow, OUTPUT);
+  pinMode(northSouthRed, OUTPUT);
+  pinMode(northSouthPedestrianButton, INPUT_PULLUP);
+
+  pinMode(pedestrianGreen, OUTPUT);
+  pinMode(pedestrianRed, OUTPUT);
+  pinMode(pedestrianButtonPin, INPUT_PULLUP);
+  Serial.begin(9600);
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("WiFi Connected");
+  ThingSpeak.begin(Wificlient);
+  
+}
+
+
+void loop() {
+   
+  anydata();
+  handlePedestrianCrossing();
+  handleTrafficLights();
+  
+  
+  
+  
+  
+  if (emergencySignalReceived) {
+    // Handle emergency vehicle passing logic
+    allowEmergencyVehiclePass();
+  }
+  
+  
+}
+
+ 
+
+void anydata() {
+  // Simulating the reading of temperature
+  String sure;
+  sure = ThingSpeak.readFloatField(myChannelNumber, 1, myReadAPIKey);
+  Serial.println("_____________________________________________");
+  Serial.print("Temperature:");
+  Serial.println(sure);
+  Serial.println("_____________________________________________");
+  
+// converting string value from thingspeak to an interger value
+  
+ temperature = sure.toInt(); //temperature = map(analogRead(A0), 20, 358, -10, 80); // Adjust this according to your sensor and mapping
+
+  // Check if temperature is above the threshold (e.g., 50)
+  if (temperature > 50) {
+    emergencySignalReceived = true;
+  } else {
+    emergencySignalReceived = false;
+  }
+   
+  delay(500);
+  
+}
+
+void handleTrafficLights() {
+  int eastWestDensity = analogRead(eastWestTrafficDensityPin);
+  int northSouthDensity = analogRead(northSouthTrafficDensityPin);
+
+  if (!emergencySignalReceived) {
+    // If there is no emergency signal, proceed with normal traffic light operation
+    // Keep North-South 'red' light on while East-West is working
+    digitalWrite(northSouthRed, HIGH);
+    eastWestTrafficLightSequence(3000, 1000, 3000, eastWestDensity);
+    digitalWrite(northSouthRed, LOW);
+
+    // Keep East-West 'red' light on while North-South is working
+    digitalWrite(eastWestRed, HIGH);
+    northSouthTrafficLightSequence(3000, 1000, 3000, northSouthDensity);
+    digitalWrite(eastWestRed, LOW);
+  } else {
+    // If there is an emergency signal, handle accordingly
+    allowEmergencyVehiclePass();
+  }
+}
+
+void eastWestTrafficLightSequence(int greenTime, int yellowTime, int redTime, int density) {
+  digitalWrite(eastWestGreen, HIGH);
+  delay(greenTime);
+  digitalWrite(eastWestGreen, LOW);
+
+  digitalWrite(eastWestYellow, HIGH);
+  delay(yellowTime);
+  digitalWrite(eastWestYellow, LOW);
+
+  digitalWrite(eastWestRed, HIGH);
+  delay(redTime);
+  digitalWrite(eastWestRed, LOW);
+
+  // Adjust the traffic light sequence based on traffic density
+  if (density > 500) {
+    // High traffic density, reduce green time
+    greenTime = 1000;
+  } else {
+    // Low to moderate traffic density, restore normal green time
+    greenTime = 3000;
+  }
+}
+
+void northSouthTrafficLightSequence(int greenTime, int yellowTime, int redTime, int density) {
+  digitalWrite(northSouthGreen, HIGH);
+  delay(greenTime);
+  digitalWrite(northSouthGreen, LOW);
+
+  digitalWrite(northSouthYellow, HIGH);
+  delay(yellowTime);
+  digitalWrite(northSouthYellow, LOW);
+
+  digitalWrite(northSouthRed, HIGH);
+  delay(redTime);
+  digitalWrite(northSouthRed, LOW);
+
+  // Adjust the traffic light sequence based on traffic density
+  if (density > 500) {
+    // High traffic density, reduce green time
+    greenTime = 1000;
+  } else {
+    // Low to moderate traffic density, restore normal green time
+    greenTime = 3000;
+  }
+}
+
+void handlePedestrianCrossing() {
+  // Check the state of the pedestrian button
+  int pedestrianButtonStateEastWest = digitalRead(eastWestPedestrianButton);
+  int pedestrianButtonStateNorthSouth = digitalRead(northSouthPedestrianButton);
+
+  
+  Serial.print("East-West Pedestrian Button State: ");
+  Serial.println(pedestrianButtonStateEastWest);
+  Serial.print("North-South Pedestrian Button State: ");
+  Serial.println(pedestrianButtonStateNorthSouth);
+  
+  // Handle pedestrian crossing for East-West
+  if (pedestrianButtonStateEastWest == LOW) {
+    startPedestrianCrossing();
+  }
+
+  // Handle pedestrian crossing for North-South
+  if (pedestrianButtonStateNorthSouth == LOW) {
+    startPedestrianCrossing();
+  }
+
+  // Check if the pedestrian crossing is ongoing
+  if (pedestrianCrossing) {
+    unsigned long elapsedTime = millis() - pedestrianCrossingStartTime;
+
+    // Pedestrian crossing sequence
+    if (elapsedTime < RED_DURATION) {
+      setPedestrianLights(1, 0); // Red
+    } else if (elapsedTime < (RED_DURATION + GREEN_DURATION)) {
+      setPedestrianLights(0, 1); // Green
+    } else {
+      // Pedestrian crossing is complete
+      pedestrianCrossing = false;
+      setPedestrianLights(1, 0); // Red
+    }
+  } else {
+    // Pedestrian signal is red when the button is not pressed
+    setPedestrianLights(1, 0); // Red
+  }
+}
+
+void startPedestrianCrossing() {
+  // Start pedestrian crossing only if it's not already in progress
+  if (!pedestrianCrossing) {
+    pedestrianCrossing = true;
+    pedestrianCrossingStartTime = millis();
+  }
+}
+
+void setPedestrianLights(int redState, int greenState) {
+  // Set pedestrian signal lights
+  digitalWrite(pedestrianRed, redState);
+  digitalWrite(pedestrianGreen, greenState);
+}
+
+
+void allowEmergencyVehiclePass() {
+  // Your logic to control traffic lights for the emergency vehicle to pass
+  allRed();  // Set all lights to red
+  delay(2000);  // Wait for a moment
+  // Adjust the lights accordingly to allow the emergency vehicle to pass
+  emergencySignalReceived = false;  // Reset the emergency signal flag
+}
+
+void allRed() {
+  digitalWrite(eastWestGreen, LOW);
+  digitalWrite(eastWestYellow, LOW);
+  digitalWrite(eastWestRed, HIGH);
+
+  digitalWrite(northSouthGreen,LOW );
+  digitalWrite(northSouthYellow, LOW);
+  digitalWrite(northSouthRed,HIGH );
+
+  digitalWrite(pedestrianGreen, LOW);
+  digitalWrite(pedestrianRed, HIGH);
+}
+
+
+/*-----------for simulation only-----------------*/
+//______________________________________________________________________________________
+int WiFiclass::begin(String ssid, String password) {
+  Serial.begin(115200);           // Serial connection over USB to computer
+  Serial.println("AT");           // Serial connection on Tx / Rx port to ESP8266
+  delay(10);                      // Wait a little for the ESP to respond
+  if (!Serial.find("OK")) return 1;
+  Serial.println("AT+CWJAP=\"" + ssid + "\",\"" + password + "\"");
+  delay(10);        // Wait a little for the ESP to respond
+  if (!Serial.find("OK")) return 2;
+}
+
+int WiFiclass::status() {
+  String L;
+  L = Serial.println("AT+CIPSTATUS");
+  Serial.println(L);
+  if (!Serial.find("Connected")) return 1;
+  return 0;
+}
+
+int WiFiclass::localIP() {
+  String  L;
+  L = Serial.println("AT+CIPSTA");
+  Serial.println(L);
+  if (!Serial.find("OK")) return 3;
+  return 0;
+}
+//______________________________________________________________________________________
+
+
+
+
+
+
+//______________________________________________________________________________________
+int WiFiClient::connect(String host, int httpPort) {
+  Serial.println("AT+CIPSTART=\"TCP\",\"" + host + "\"," + httpPort);
+  Serial.flush();
+}
+
+int  WiFiClient::write(String httpPacket, int length){
+  Serial.print("AT+CIPSEND=");
+  Serial.println(length);
+  delay(10);
+  Serial.print(httpPacket);
+  delay(10); // Wait a litt
+}
+
+String WiFiClient::read(String httpPacket, int length) {
+  String l;
+  l = pos;
+  char t = 0x13;
+  Serial.print("AT+CIPSEND=");
+  Serial.println(length);
+  delay(10);
+  Serial.print(httpPacket);
+  delay(10); // Wait a litt
+  while (!Serial.available()) delay(5);
+  String saida = "" ;
+  if (Serial.find("\r\n\r\n")) {
+    delay(5);
+    unsigned int i = 0;
+    while (!Serial.find("\"feeds\":")) {}
+    while (!Serial.find("\"field")) {}
+    Serial.print(Serial.read());Serial.print(Serial.read());Serial.print(Serial.read());
+    Serial.println();
+    while (i < 60000) {
+      if (Serial.available()) {
+        int c = Serial.read();
+        if (c == '.')
+          break;
+        if ((isDigit(c))) {
+          saida += (char)c;
+        }
+      }
+      i++;
+    }
+  }
+//      Serial.print("saida:");
+//      Serial.println(saida);
+  return saida;
+}
+//______________________________________________________________________________________
+
+
+
+
+
+
+//______________________________________________________________________________________
+int ThingSpeakclass::begin(WiFiClient Wificlient) {
+  
+}
+
+int ThingSpeakclass::setField(int pos, float temp){
+  bollean[pos] = true;
+  field[pos] = String(temp);
+  //Serial.print("cs:");
+  //Serial.println(String (bollean[pos]));
+  //Serial.print("csqs:");
+  //Serial.println(String(field[pos]));
+}
+
+int ThingSpeakclass::writeFields(unsigned long myChannelNumber, const char* myWriteAPIKey) {
+  String httpPacket;
+  int length ;
+  Serial.print("write:");
+  Serial.println(myChannelNumber);
+  Serial.print("write:");
+  Serial.println(myWriteAPIKey);
+  WiFiClient Wificlient;
+  Wificlient.connect( host, httpPort);
+  httpPacket = "GET " + writeURI + myWriteAPIKey;
+  for (int i = 1; i <= 8; i++) {
+    if (bollean[i] == true) {
+      bollean[i] = false;
+      String l;
+      l = i;
+      //Serial.print("pos:");
+      //Serial.println(i);
+      httpPacket = httpPacket + "&field" + l + "=" + field[i];
+    }
+  }
+  httpPacket = httpPacket + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n";
+  length = httpPacket.length();
+  Wificlient.write( httpPacket, length);
+}
+
+String ThingSpeakclass::readFloatField(unsigned long myChannelNumber, int pos, const char* myReadAPIKey){
+  String httpPacket;
+  int length ;
+//  Serial.print("write:");
+//  Serial.println(myChannelNumber);
+//  Serial.print("write:");
+//  Serial.println(myReadAPIKey);
+  WiFiClient Wificlient;
+  Wificlient.connect( host, httpPort);
+  httpPacket = "GET " + readURI;
+  String l;
+  l = pos;
+  String api;
+  api = myReadAPIKey;
+//  Serial.print("pos:");
+//  Serial.println(pos);
+  httpPacket = httpPacket + myChannelNumber1 + "/fields/" + l + ".json?api_key=" + api + "&results=1";
+  httpPacket = httpPacket + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n";
+  length = httpPacket.length();
+  return Wificlient.read( httpPacket, length);
+}
+//______________________________________________________________________________________
